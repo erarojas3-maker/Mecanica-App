@@ -39,53 +39,36 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const money = (n) => `₡${(Number(n) || 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ---------------------------------------------------------------------------
-// Storage helpers — llaman a la API real (Express + Postgres en Render)
-// Todos los usuarios que abren la app ven los mismos datos, guardados
-// en la base de datos, no en el dispositivo.
+// Storage helpers (personal, not shared)
 // ---------------------------------------------------------------------------
-const API_BASE = "/api/store";
-
 async function loadList(key) {
   try {
-    const res = await fetch(`${API_BASE}/${encodeURIComponent(key)}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data.value) ? data.value : [];
-  } catch (e) {
-    console.error("error cargando", key, e);
+    const res = await window.storage.get(key, false);
+    return res ? JSON.parse(res.value) : [];
+  } catch {
     return [];
   }
 }
 async function saveList(key, value) {
   try {
-    await fetch(`${API_BASE}/${encodeURIComponent(key)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value }),
-    });
+    await window.storage.set(key, JSON.stringify(value), false);
   } catch (e) {
-    console.error("error guardando", key, e);
+    console.error("storage error", e);
   }
 }
 async function loadSettings() {
   try {
-    const res = await fetch(`${API_BASE}/${encodeURIComponent("taller:settings")}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.value || null;
+    const res = await window.storage.get("taller:settings", false);
+    return res ? JSON.parse(res.value) : null;
   } catch {
     return null;
   }
 }
 async function saveSettings(value) {
   try {
-    await fetch(`${API_BASE}/${encodeURIComponent("taller:settings")}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value }),
-    });
+    await window.storage.set("taller:settings", JSON.stringify(value), false);
   } catch (e) {
-    console.error("error guardando ajustes", e);
+    console.error("storage error", e);
   }
 }
 
@@ -327,8 +310,9 @@ export default function TallerApp() {
 
   return (
     <div className="app-shell" style={{
-      display: "flex", height: "100%", minHeight: "100vh", background: COLORS.bg, color: COLORS.text,
-      fontFamily: "'Inter', -apple-system, sans-serif", overflow: "hidden",
+      display: "flex", height: "100%", minHeight: 640, background: COLORS.bg, color: COLORS.text,
+      fontFamily: "'Inter', -apple-system, sans-serif", borderRadius: 12, overflow: "hidden",
+      border: `1px solid ${COLORS.border}`,
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
