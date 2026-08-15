@@ -333,17 +333,18 @@ export default function TallerApp() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; }
+        html, body { overflow-x: hidden; width: 100%; margin: 0; padding: 0; max-width: 100%; }
         ::placeholder { color: ${COLORS.textFaint}; }
         button { font-family: inherit; }
 
-        .app-shell { flex-direction: row; }
+        .app-shell { flex-direction: row; max-width: 100%; overflow-x: hidden; }
         .sidebar { width: 200px; flex-direction: column; padding: 18px 12px; border-right: 1px solid ${COLORS.border}; border-bottom: none; }
         .sidebar-brand { display: flex; }
         .nav-btn { flex-direction: row; justify-content: flex-start; gap: 10px; font-size: 14px; padding: 10px 10px; }
         .nav-btn span.nav-label { display: inline; }
         .sidebar-spacer { display: block; }
         .save-status { display: block; }
-        .content-area { padding: 24px 28px; }
+        .content-area { padding: 24px 28px; min-width: 0; overflow-x: hidden; word-wrap: break-word; overflow-wrap: break-word; }
         .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
         .vehicles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
         .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
