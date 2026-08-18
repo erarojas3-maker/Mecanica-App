@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Wrench, Users, Car, ClipboardList, Plus, X, Camera, Video,
-  Phone, Mail, ChevronRight, Search, Trash2, Edit2, Share2,
+  Phone, Mail, ChevronRight, ChevronLeft, Search, Trash2, Edit2, Share2,
   CheckCircle2, Clock, AlertCircle, PackageCheck, ImageOff, Loader2,
   FileText, DollarSign, Receipt, Settings, Lock, Image as ImageIcon, Unlock
 } from "lucide-react";
@@ -39,36 +39,53 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const money = (n) => `₡${(Number(n) || 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ---------------------------------------------------------------------------
-// Storage helpers (personal, not shared)
+// Storage helpers — llaman a la API real (Express + Postgres en Render)
+// Todos los usuarios que abren la app ven los mismos datos, guardados
+// en la base de datos, no en el dispositivo.
 // ---------------------------------------------------------------------------
+const API_BASE = "/api/store";
+
 async function loadList(key) {
   try {
-    const res = await window.storage.get(key, false);
-    return res ? JSON.parse(res.value) : [];
-  } catch {
+    const res = await fetch(`${API_BASE}/${encodeURIComponent(key)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.value) ? data.value : [];
+  } catch (e) {
+    console.error("error cargando", key, e);
     return [];
   }
 }
 async function saveList(key, value) {
   try {
-    await window.storage.set(key, JSON.stringify(value), false);
+    await fetch(`${API_BASE}/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
   } catch (e) {
-    console.error("storage error", e);
+    console.error("error guardando", key, e);
   }
 }
 async function loadSettings() {
   try {
-    const res = await window.storage.get("taller:settings", false);
-    return res ? JSON.parse(res.value) : null;
+    const res = await fetch(`${API_BASE}/${encodeURIComponent("taller:settings")}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.value || null;
   } catch {
     return null;
   }
 }
 async function saveSettings(value) {
   try {
-    await window.storage.set("taller:settings", JSON.stringify(value), false);
+    await fetch(`${API_BASE}/${encodeURIComponent("taller:settings")}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
   } catch (e) {
-    console.error("storage error", e);
+    console.error("error guardando ajustes", e);
   }
 }
 
@@ -219,6 +236,53 @@ function EmptyState({ icon: Icon, title, subtitle }) {
   );
 }
 
+// Paginación — mantiene cada pantalla mostrando solo un puñado de registros
+// a la vez, para que no haga falta desplazarse en celular.
+function usePagination(items, perPage) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / perPage));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * perPage;
+  const pageItems = items.slice(start, start + perPage);
+  return { page: safePage, setPage, totalPages, pageItems };
+}
+
+function Pagination({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "center", gap: 14,
+      marginTop: 18, paddingTop: 4,
+    }}>
+      <button
+        onClick={() => onChange(page - 1)} disabled={page <= 1}
+        style={{
+          display: "flex", alignItems: "center", gap: 4, background: "none",
+          border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "7px 12px",
+          color: page <= 1 ? COLORS.textFaint : COLORS.text, fontSize: 13, fontWeight: 600,
+          cursor: page <= 1 ? "default" : "pointer",
+        }}
+      >
+        <ChevronLeft size={15} /> Anterior
+      </button>
+      <span style={{ fontSize: 12.5, color: COLORS.textMuted, minWidth: 78, textAlign: "center" }}>
+        Página {page} de {totalPages}
+      </span>
+      <button
+        onClick={() => onChange(page + 1)} disabled={page >= totalPages}
+        style={{
+          display: "flex", alignItems: "center", gap: 4, background: "none",
+          border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "7px 12px",
+          color: page >= totalPages ? COLORS.textFaint : COLORS.text, fontSize: 13, fontWeight: 600,
+          cursor: page >= totalPages ? "default" : "pointer",
+        }}
+      >
+        Siguiente <ChevronRight size={15} />
+      </button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main App
 // ---------------------------------------------------------------------------
@@ -310,9 +374,8 @@ export default function TallerApp() {
 
   return (
     <div className="app-shell" style={{
-      display: "flex", height: "100%", minHeight: 640, background: COLORS.bg, color: COLORS.text,
-      fontFamily: "'Inter', -apple-system, sans-serif", borderRadius: 12, overflow: "hidden",
-      border: `1px solid ${COLORS.border}`,
+      display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text,
+      fontFamily: "'Inter', -apple-system, sans-serif",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
@@ -322,6 +385,7 @@ export default function TallerApp() {
         button { font-family: inherit; }
 
         .app-shell { flex-direction: row; max-width: 100%; overflow-x: hidden; }
+        .mobile-topbar { display: none; }
         .sidebar { width: 200px; flex-direction: column; padding: 18px 12px; border-right: 1px solid ${COLORS.border}; border-bottom: none; }
         .sidebar-brand { display: flex; }
         .nav-btn { flex-direction: row; justify-content: flex-start; gap: 10px; font-size: 14px; padding: 10px 10px; }
@@ -329,7 +393,8 @@ export default function TallerApp() {
         .sidebar-spacer { display: block; }
         .save-status { display: block; }
         .content-area { padding: 24px 28px; min-width: 0; overflow-x: hidden; word-wrap: break-word; overflow-wrap: break-word; }
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; min-width: 0; }
+        .stat-card { min-width: 0; }
         .vehicles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
         .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .parts-row { display: flex; gap: 6px; align-items: center; }
@@ -341,20 +406,33 @@ export default function TallerApp() {
         @media (max-width: 700px) {
           .app-shell { flex-direction: column; min-height: 100dvh; }
           .sidebar {
-            width: 100%; flex-direction: row; align-items: center; padding: 8px 8px;
+            width: 100%; flex-direction: row; align-items: stretch; justify-content: space-between;
+            padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px)) 4px;
             border-right: none; border-bottom: 1px solid ${COLORS.border}; order: 2;
-            position: sticky; bottom: 0; background: ${COLORS.surface}; overflow-x: auto;
-            gap: 2px; z-index: 5;
+            position: sticky; bottom: 0; background: ${COLORS.surface};
+            overflow-x: visible; gap: 0; z-index: 5;
           }
           .sidebar-brand { display: none; }
+          .mobile-topbar {
+            display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+            border-bottom: 1px solid ${COLORS.border}; background: ${COLORS.surface}; order: 0;
+          }
           .sidebar-spacer { display: none; }
           .save-status { display: none; }
           .nav-btn {
-            flex-direction: column; gap: 3px; font-size: 10px; padding: 7px 6px;
-            flex: 1; min-width: 56px; text-align: center; align-items: center;
+            flex-direction: column; gap: 2px; font-size: 9.5px; padding: 6px 2px;
+            flex: 1 1 0; min-width: 0; width: 0; text-align: center; align-items: center;
+            justify-content: center; overflow: hidden;
+          }
+          .nav-btn svg { flex-shrink: 0; }
+          .nav-btn .nav-label {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
           }
           .content-area { padding: 16px; order: 1; }
           .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+          .stat-card { padding: 12px 10px !important; }
+          .stat-card-label { font-size: 11px !important; }
+          .status-bar-label { font-size: 9.5px !important; }
           .vehicles-grid { grid-template-columns: 1fr; }
           .two-col { grid-template-columns: 1fr; }
           .parts-row { flex-wrap: wrap; }
@@ -363,7 +441,31 @@ export default function TallerApp() {
           .parts-row .part-cost { flex: 1; width: auto; }
           .invoice-info-grid { grid-template-columns: 1fr; }
         }
+
+        @media (max-width: 380px) {
+          .nav-btn { font-size: 8.5px; padding: 5px 1px; }
+          .nav-btn svg { width: 15px; height: 15px; }
+        }
       `}</style>
+
+      {/* Barra superior solo visible en celular: logo + nombre del taller */}
+      <div className="mobile-topbar">
+        {settings.logo ? (
+          <img src={settings.logo} alt="logo" style={{ width: 26, height: 26, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
+        ) : (
+          <div style={{
+            width: 26, height: 26, borderRadius: 6, background: COLORS.accent,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            <Wrench size={14} color="#1B1D21" strokeWidth={2.5} />
+          </div>
+        )}
+        <span style={{
+          fontFamily: "'Barlow Condensed', sans-serif", fontSize: 17, fontWeight: 700,
+          letterSpacing: 0.4, textTransform: "uppercase", overflow: "hidden",
+          textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{settings.name || "Mi Taller"}</span>
+      </div>
 
       {/* Sidebar */}
       <div className="sidebar" style={{
@@ -424,7 +526,7 @@ export default function TallerApp() {
       </div>
 
       {/* Content */}
-      <div className="content-area" style={{ flex: 1, overflowY: "auto" }}>
+      <div className="content-area" style={{ flex: 1 }}>
         {tab === "dashboard" && (
           <Dashboard
             clients={clients} vehicles={vehicles} orders={orders}
@@ -486,17 +588,21 @@ function Dashboard({ clients, vehicles, orders, vehicleById, clientById, setTab 
       <PageHeader title="Panel general" subtitle="Resumen del taller" />
       <div className="stats-grid" style={{ marginBottom: 24 }}>
         {stats.map((s) => (
-          <div key={s.label} style={{
+          <div key={s.label} className="stat-card" style={{
             background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 18,
+            minWidth: 0,
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, minWidth: 0 }}>
               <div style={{
                 width: 32, height: 32, borderRadius: 8, background: `${s.color}22`,
-                display: "flex", alignItems: "center", justifyContent: "center",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
               }}>
                 <s.icon size={16} color={s.color} />
               </div>
-              <span style={{ fontSize: 13, color: COLORS.textMuted, fontWeight: 600 }}>{s.label}</span>
+              <span className="stat-card-label" style={{
+                fontSize: 13, color: COLORS.textMuted, fontWeight: 600, minWidth: 0,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{s.label}</span>
             </div>
             <div style={{ fontSize: 32, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.value}</div>
           </div>
@@ -510,12 +616,12 @@ function Dashboard({ clients, vehicles, orders, vehicleById, clientById, setTab 
         <div style={{ fontSize: 13, color: COLORS.textMuted, fontWeight: 700, marginBottom: 14, letterSpacing: 0.3, textTransform: "uppercase" }}>
           Órdenes por estado
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="status-bar-row" style={{ display: "flex", gap: 8, minWidth: 0 }}>
           {byStatus.map(({ status, count }) => {
             const s = STATUS[status];
             const max = Math.max(1, ...byStatus.map((b) => b.count));
             return (
-              <div key={status} style={{ flex: 1, textAlign: "center" }}>
+              <div key={status} className="status-bar-item" style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
                 <div style={{
                   height: 80, display: "flex", alignItems: "flex-end", justifyContent: "center", marginBottom: 8,
                 }}>
@@ -526,7 +632,7 @@ function Dashboard({ clients, vehicles, orders, vehicleById, clientById, setTab 
                   }} />
                 </div>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>{count}</div>
-                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{s.label}</div>
+                <div className="status-bar-label" style={{ fontSize: 11, color: COLORS.textMuted, overflowWrap: "break-word" }}>{s.label}</div>
               </div>
             );
           })}
@@ -600,6 +706,8 @@ function ClientsView({ clients, vehicles, updateClients }) {
   const filtered = clients.filter((c) =>
     (c.name + c.phone + c.email).toLowerCase().includes(query.toLowerCase())
   );
+  const { page, setPage, totalPages, pageItems } = usePagination(filtered, 6);
+  useEffect(() => setPage(1), [query]);
 
   const save = (data) => {
     if (data.id) {
@@ -630,7 +738,7 @@ function ClientsView({ clients, vehicles, updateClients }) {
         <EmptyState icon={Users} title="Sin clientes" subtitle="Agrega tu primer cliente para comenzar" />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filtered.map((c) => {
+          {pageItems.map((c) => {
             const vCount = vehicles.filter((v) => v.clientId === c.id).length;
             return (
               <div key={c.id} style={{
@@ -652,6 +760,7 @@ function ClientsView({ clients, vehicles, updateClients }) {
               </div>
             );
           })}
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       )}
 
@@ -728,6 +837,8 @@ function VehiclesView({ vehicles, clients, clientById, updateVehicles }) {
   const filtered = vehicles.filter((v) =>
     (v.make + v.model + v.plate).toLowerCase().includes(query.toLowerCase())
   );
+  const { page, setPage, totalPages, pageItems } = usePagination(filtered, 4);
+  useEffect(() => setPage(1), [query]);
 
   const save = (data) => {
     if (data.id) updateVehicles(vehicles.map((v) => (v.id === data.id ? data : v)));
@@ -761,7 +872,7 @@ function VehiclesView({ vehicles, clients, clientById, updateVehicles }) {
         <EmptyState icon={Car} title="Sin vehículos" subtitle="Registra el primer vehículo de un cliente" />
       ) : (
         <div className="vehicles-grid">
-          {filtered.map((v) => (
+          {pageItems.map((v) => (
             <div key={v.id} style={{
               background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 16,
             }}>
@@ -789,6 +900,7 @@ function VehiclesView({ vehicles, clients, clientById, updateVehicles }) {
           ))}
         </div>
       )}
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
 
       {editing && <VehicleModal vehicle={editing} clients={clients} onClose={() => setEditing(null)} onSave={save} />}
       {confirmDelete && (
@@ -847,6 +959,8 @@ function OrdersView({ orders, vehicles, clients, vehicleById, clientById, update
 
   const filtered = filterStatus === "all" ? orders : orders.filter((o) => o.status === filterStatus);
   const sorted = [...filtered].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const { page, setPage, totalPages, pageItems } = usePagination(sorted, 6);
+  useEffect(() => setPage(1), [filterStatus]);
 
   const save = (data) => {
     if (data.id) updateOrders(orders.map((o) => (o.id === data.id ? data : o)));
@@ -886,7 +1000,7 @@ function OrdersView({ orders, vehicles, clients, vehicleById, clientById, update
         <EmptyState icon={Wrench} title="Sin órdenes" subtitle="Crea la primera orden de trabajo" />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {sorted.map((o) => {
+          {pageItems.map((o) => {
             const v = vehicleById[o.vehicleId];
             const c = v ? clientById[v.clientId] : null;
             return (
@@ -917,6 +1031,7 @@ function OrdersView({ orders, vehicles, clients, vehicleById, clientById, update
               </div>
             );
           })}
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       )}
 
@@ -1141,6 +1256,7 @@ function InvoicesView({ invoices, vehicles, orders, vehicleById, clientById, upd
   }, [prefillOrder]);
 
   const sorted = [...invoices].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const { page, setPage, totalPages, pageItems } = usePagination(sorted, 6);
 
   const save = (data) => {
     if (data.id) updateInvoices(invoices.map((i) => (i.id === data.id ? data : i)));
@@ -1176,7 +1292,7 @@ function InvoicesView({ invoices, vehicles, orders, vehicleById, clientById, upd
         <EmptyState icon={Receipt} title="Sin facturas" subtitle="Crea la primera factura de un trabajo" />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {sorted.map((inv) => {
+          {pageItems.map((inv) => {
             const v = vehicleById[inv.vehicleId];
             const c = v ? clientById[v.clientId] : null;
             return (
@@ -1199,6 +1315,7 @@ function InvoicesView({ invoices, vehicles, orders, vehicleById, clientById, upd
               </div>
             );
           })}
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       )}
 
